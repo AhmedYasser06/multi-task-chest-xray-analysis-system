@@ -48,7 +48,14 @@ class YoloLoss(nn.Module):
         pred_y = pred_xy[..., 1] + grid_y
         pred_xy = torch.stack([pred_x, pred_y], dim=-1)
 
-        pred_wh = anchors.view(1, 1, 1, n_anchors, 2) * torch.exp(y_pred[..., 2:4])
+        # clamp(max=10) before exp(): under fp16 autocast, exp() of a large
+        # pre-activation silently overflows to inf (confirmed: exp(20) in
+        # fp16 -> inf), which then poisons the loss/gradients with NaN with
+        # no error raised. exp(10)=~22026, already far larger than any real
+        # anchor-relative box size, so this only clips runaway values, not
+        # normal training dynamics.
+        pred_wh = anchors.view(1, 1, 1, n_anchors, 2) * torch.exp(
+            torch.clamp(y_pred[..., 2:4], max=10.0))
         pred_min = pred_xy - pred_wh / 2
         pred_max = pred_xy + pred_wh / 2
 

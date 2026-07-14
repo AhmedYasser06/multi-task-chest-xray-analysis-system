@@ -94,7 +94,7 @@ def decode_predictions(det_out, img_size=config.IMG_SIZE, grid_size=config.GRID_
     x = (xy[..., 0] + gx)
     y = (xy[..., 1] + gy)
 
-    wh = anchors_t.view(1, 1, -1, 2) * torch.exp(det_out[..., 2:4])
+    wh = anchors_t.view(1, 1, -1, 2) * torch.exp(torch.clamp(det_out[..., 2:4], max=10.0))
     obj = torch.sigmoid(det_out[..., 4])
     cls = torch.softmax(det_out[..., 5:], dim=-1)
     cls_score, cls_id = cls.max(dim=-1)

@@ -62,12 +62,24 @@ class BCEDiceLoss(nn.Module):
 
         dice = 1.0 - dice_coeff(y_pred, y_true_clamped)
 
-        bce_map = self.bce(y_pred, y_true_clamped)
-        if self.pos_weight is not None:
-            pw = self.pos_weight.to(y_pred.device)
-            weight_map = 1.0 + (pw - 1.0) * y_true_clamped
-            bce_map = bce_map * weight_map
-        bce = bce_map.reshape(b, -1).mean(dim=1)
+        # nn.BCELoss (probabilities in, not logits) is explicitly disallowed
+        # under autocast/mixed precision - PyTorch raises
+        # "binary_cross_entropy and BCELoss are unsafe to autocast" because
+        # it's numerically unstable in fp16. The segmenter head already
+        # applies sigmoid internally, so y_pred here is a probability, not a
+        # logit - we can't just swap in BCEWithLogitsLoss without changing
+        # the model. Instead, force this specific computation to run in fp32
+        # outside of autocast, which is exactly what BCEWithLogitsLoss does
+        # internally anyway.
+        with torch.autocast(device_type=y_pred.device.type, enabled=False):
+            y_pred_f32 = y_pred.float()
+            y_true_f32 = y_true_clamped.float()
+            bce_map = self.bce(y_pred_f32, y_true_f32)
+            if self.pos_weight is not None:
+                pw = self.pos_weight.to(y_pred.device)
+                weight_map = 1.0 + (pw - 1.0) * y_true_f32
+                bce_map = bce_map * weight_map
+            bce = bce_map.reshape(b, -1).mean(dim=1)
 
         loss = self.bce_weight * bce + self.dice_weight * dice
         return loss * valid.float()
