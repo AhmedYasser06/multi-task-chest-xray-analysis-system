@@ -1,0 +1,12 @@
+torch>=2.1
+torchvision>=0.16
+numpy
+pandas
+opencv-python-headless
+pydicom
+albumentations
+scikit-image
+matplotlib
+tqdm
+gradio
+kaggle
