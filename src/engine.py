@@ -16,7 +16,7 @@ from .utils.metrics import classification_accuracy, dice_score, dice_score_posit
 # Single-head training (used by 01/02/03 notebooks)
 # ---------------------------------------------------------------------------
 def train_one_epoch_segmenter(model, loader, optimizer, device=config.DEVICE, scaler=None,
-                               pos_weight=4.0):
+                               pos_weight="auto"):
     """Uses BCE+Dice instead of plain Dice: on SIIM-ACR ~80% of masks are
     entirely empty, so plain Dice loss collapses to a "predict nothing"
     optimum within ~1 epoch and gradients vanish. BCE keeps a real per-pixel
@@ -65,7 +65,7 @@ def train_one_epoch_segmenter(model, loader, optimizer, device=config.DEVICE, sc
 
 
 @torch.no_grad()
-def evaluate_segmenter(model, loader, device=config.DEVICE, pos_weight=4.0):
+def evaluate_segmenter(model, loader, device=config.DEVICE, pos_weight="auto"):
     model.eval()
     loss_fn = BCEDiceLoss(pos_weight=pos_weight)
     running_loss, running_dice = 0.0, 0.0
@@ -179,7 +179,7 @@ def evaluate_classifier(model, loader, device=config.DEVICE):
 # Joint MTL training (used by the 04 notebook)
 # ---------------------------------------------------------------------------
 def train_one_epoch_mtl(model, loader, optimizer, device=config.DEVICE,
-                         loss_weights=(1.0, 1.0, 1.0), scaler=None, pos_weight=4.0):
+                         loss_weights=(1.0, 1.0, 1.0), scaler=None, pos_weight="auto"):
     """loss_weights = (classification_w, detection_w, segmentation_w)"""
     model.train()
     ce = torch.nn.CrossEntropyLoss()
@@ -229,7 +229,7 @@ def train_one_epoch_mtl(model, loader, optimizer, device=config.DEVICE,
 
 @torch.no_grad()
 def evaluate_mtl(model, loader, device=config.DEVICE, loss_weights=(1.0, 1.0, 1.0),
-                  pos_weight=4.0):
+                  pos_weight="auto"):
     model.eval()
     ce = torch.nn.CrossEntropyLoss()
     yolo_loss_fn = YoloLoss()

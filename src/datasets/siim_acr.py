@@ -32,12 +32,27 @@ def _index_dicom_files(train_path):
     return {os.path.basename(p).split(".dcm")[0]: p for p in paths}
 
 
-def build_siim_dataframe(csv_path, train_path):
+def build_siim_dataframe(csv_path, train_path, only_positive=False):
+    """only_positive: matches the upstream reference repo's default
+    (coursat-ai/MultiCheXNet, SIIM_ACR_dataloader.get_train_validation_generator,
+    only_positive=True by default). Drops every image with an entirely empty
+    pneumothorax mask before training/val split.
+
+    This is the canonical fix for the "predict nothing" collapse: with plain
+    Dice loss (or even BCE+Dice), training on a mix where ~80% of masks are
+    empty gives the model a trivial near-perfect-scoring shortcut. If the
+    model never sees an empty mask during segmentation training, that
+    shortcut doesn't exist, and Dice loss behaves as intended. This is
+    stronger than the BCEDiceLoss + WeightedRandomSampler mitigation and is
+    what the original authors ship as their default - use both together.
+    """
     df = pd.read_csv(csv_path)
     df.columns = [c.strip() for c in df.columns]           # normalize " EncodedPixels"
     file_map = _index_dicom_files(train_path)
     df["full_path"] = df["ImageId"].map(file_map.get)
     df = df.dropna(subset=["full_path"]).reset_index(drop=True)
+    if only_positive:
+        df = df[df["EncodedPixels"].str.strip() != "-1"].reset_index(drop=True)
     return df
 
 

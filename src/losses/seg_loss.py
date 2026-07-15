@@ -43,16 +43,34 @@ class BCEDiceLoss(nn.Module):
     mode on SIIM-ACR-style segmentation tasks.
 
     `pos_weight` up-weights the (rare) positive pixels inside the BCE term to
-    further counteract the class imbalance.
+    further counteract the class imbalance. Two levels of imbalance are at
+    play here and are easy to conflate:
+      1. image-level: most images have an entirely empty mask (handled by
+         the WeightedRandomSampler in the training notebook, not by this
+         loss).
+      2. pixel-level: even *within* a positive image, the pneumothorax
+         region itself is usually only a small fraction (often <10%) of the
+         image's pixels. A fixed pos_weight tuned for (1) is nowhere near
+         strong enough for (2) - e.g. a 5%-of-image lesion needs roughly a
+         19x pixel weight just to reach 50/50, and more once you account for
+         batches still containing negative images too.
+
+    pos_weight="auto" (default) computes the weight per-batch from the
+    actual ratio of negative to positive pixels currently in the batch,
+    clamped to [1, max_pos_weight] for stability - this adapts automatically
+    instead of requiring hand-tuning, and won't blow up on an all-negative
+    batch (falls back to 1.0, i.e. plain BCE, since there's nothing to
+    up-weight).
     """
 
     def __init__(self, ignore_value=config.IGNORE_VALUE, bce_weight=0.5,
-                 dice_weight=0.5, pos_weight=4.0):
+                 dice_weight=0.5, pos_weight="auto", max_pos_weight=50.0):
         super().__init__()
         self.ignore_value = ignore_value
         self.bce_weight = bce_weight
         self.dice_weight = dice_weight
-        self.pos_weight = torch.tensor(pos_weight) if pos_weight is not None else None
+        self.pos_weight = pos_weight
+        self.max_pos_weight = max_pos_weight
         self.bce = nn.BCELoss(reduction="none")
 
     def forward(self, y_pred, y_true):
@@ -75,8 +93,21 @@ class BCEDiceLoss(nn.Module):
             y_pred_f32 = y_pred.float()
             y_true_f32 = y_true_clamped.float()
             bce_map = self.bce(y_pred_f32, y_true_f32)
-            if self.pos_weight is not None:
-                pw = self.pos_weight.to(y_pred.device)
+
+            if self.pos_weight == "auto":
+                n_pos = y_true_f32.sum()
+                n_total = y_true_f32.numel()
+                n_neg = n_total - n_pos
+                # falls back to 1.0 (no weighting) if the batch happens to
+                # have zero positive pixels, instead of dividing by zero
+                pw = torch.clamp(n_neg / torch.clamp(n_pos, min=1.0),
+                                  min=1.0, max=self.max_pos_weight)
+            elif self.pos_weight is not None:
+                pw = torch.as_tensor(self.pos_weight, device=y_pred.device)
+            else:
+                pw = None
+
+            if pw is not None:
                 weight_map = 1.0 + (pw - 1.0) * y_true_f32
                 bce_map = bce_map * weight_map
             bce = bce_map.reshape(b, -1).mean(dim=1)
