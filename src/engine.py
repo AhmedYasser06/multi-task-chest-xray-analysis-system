@@ -16,7 +16,7 @@ from .utils.metrics import classification_accuracy, dice_score, dice_score_posit
 # Single-head training (used by 01/02/03 notebooks)
 # ---------------------------------------------------------------------------
 def train_one_epoch_segmenter(model, loader, optimizer, device=config.DEVICE, scaler=None,
-                               pos_weight="auto"):
+                               pos_weight="auto", max_grad_norm=5.0):
     """Uses BCE+Dice instead of plain Dice: on SIIM-ACR ~80% of masks are
     entirely empty, so plain Dice loss collapses to a "predict nothing"
     optimum within ~1 epoch and gradients vanish. BCE keeps a real per-pixel
@@ -26,7 +26,14 @@ def train_one_epoch_segmenter(model, loader, optimizer, device=config.DEVICE, sc
     Reports both the overall dice (`dice`, dominated by trivially-correct
     empty-mask samples) and `pos_dice` (dice averaged only over samples that
     actually contain pneumothorax) - watch `pos_dice`/`val_pos_dice` as the
-    real signal of whether the model is learning to segment."""
+    real signal of whether the model is learning to segment.
+
+    max_grad_norm: clips the gradient norm each step (None to disable).
+    Occasional batches with very few positive pixels can push the
+    per-batch "auto" pos_weight toward its upper clamp, producing an
+    unusually large gradient on that step; without clipping this can throw
+    training into a multi-epoch instability it doesn't recover from before
+    early stopping kicks in. Clipping is cheap insurance against that."""
     model.train()
     loss_fn = BCEDiceLoss(pos_weight=pos_weight)
     running_loss, running_dice = 0.0, 0.0
@@ -44,10 +51,15 @@ def train_one_epoch_segmenter(model, loader, optimizer, device=config.DEVICE, sc
 
         if scaler is not None:
             scaler.scale(loss).backward()
+            if max_grad_norm is not None:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
         else:
             loss.backward()
+            if max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
 
         running_loss += loss.item()
@@ -88,7 +100,8 @@ def evaluate_segmenter(model, loader, device=config.DEVICE, pos_weight="auto"):
     }
 
 
-def train_one_epoch_detector(model, loader, optimizer, device=config.DEVICE, scaler=None):
+def train_one_epoch_detector(model, loader, optimizer, device=config.DEVICE, scaler=None,
+                              max_grad_norm=5.0):
     model.train()
     yolo_loss_fn = YoloLoss()
     running_loss = 0.0
@@ -105,10 +118,15 @@ def train_one_epoch_detector(model, loader, optimizer, device=config.DEVICE, sca
 
         if scaler is not None:
             scaler.scale(loss).backward()
+            if max_grad_norm is not None:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
         else:
             loss.backward()
+            if max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
 
         running_loss += loss.item()
@@ -130,7 +148,8 @@ def evaluate_detector(model, loader, device=config.DEVICE):
     return {"loss": running_loss / len(loader)}
 
 
-def train_one_epoch_classifier(model, loader, optimizer, device=config.DEVICE, scaler=None):
+def train_one_epoch_classifier(model, loader, optimizer, device=config.DEVICE, scaler=None,
+                                max_grad_norm=5.0):
     model.train()
     ce = torch.nn.CrossEntropyLoss()
     running_loss, running_acc = 0.0, 0.0
@@ -146,10 +165,15 @@ def train_one_epoch_classifier(model, loader, optimizer, device=config.DEVICE, s
 
         if scaler is not None:
             scaler.scale(loss).backward()
+            if max_grad_norm is not None:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
         else:
             loss.backward()
+            if max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
 
         running_loss += loss.item()
@@ -179,7 +203,8 @@ def evaluate_classifier(model, loader, device=config.DEVICE):
 # Joint MTL training (used by the 04 notebook)
 # ---------------------------------------------------------------------------
 def train_one_epoch_mtl(model, loader, optimizer, device=config.DEVICE,
-                         loss_weights=(1.0, 1.0, 1.0), scaler=None, pos_weight="auto"):
+                         loss_weights=(1.0, 1.0, 1.0), scaler=None, pos_weight="auto",
+                         max_grad_norm=5.0):
     """loss_weights = (classification_w, detection_w, segmentation_w)"""
     model.train()
     ce = torch.nn.CrossEntropyLoss()
@@ -207,10 +232,15 @@ def train_one_epoch_mtl(model, loader, optimizer, device=config.DEVICE,
 
         if scaler is not None:
             scaler.scale(loss).backward()
+            if max_grad_norm is not None:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
         else:
             loss.backward()
+            if max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
 
         totals["loss"] += loss.item()
