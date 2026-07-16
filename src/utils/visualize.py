@@ -59,6 +59,83 @@ def show_image_boxes(image, boxes, scores=None, class_names=None, class_ids=None
     plt.show()
 
 
+def show_segmentation_grid(images, gt_masks, pred_masks, n_cols=4, figsize_per_cell=3.0,
+                            threshold=0.5):
+    """Grid of images with ground-truth (green) and predicted (blue) mask
+    contours overlaid on the same panel - matches the "Segmentation
+    results" example-results style in the upstream repo's README
+    (coursat-ai/MultiCheXNet).
+
+    images: list of HxWx3 arrays. gt_masks/pred_masks: list of HxW arrays
+    in [0,1] (pred_masks are thresholded at `threshold` before contouring).
+    """
+    n = len(images)
+    n_cols = min(n_cols, n) or 1
+    n_rows = int(np.ceil(n / n_cols))
+    fig, axes = plt.subplots(n_rows, n_cols,
+                              figsize=(figsize_per_cell * n_cols, figsize_per_cell * n_rows))
+    axes = np.atleast_1d(axes).reshape(-1)
+
+    for i in range(len(axes)):
+        ax = axes[i]
+        ax.axis("off")
+        if i >= n:
+            continue
+        ax.imshow(images[i], cmap="gray")
+        if gt_masks[i] is not None and gt_masks[i].max() > 0:
+            ax.contour(gt_masks[i] > threshold, colors="lime", linewidths=1.5)
+        if pred_masks[i] is not None and pred_masks[i].max() > threshold:
+            ax.contour(pred_masks[i] > threshold, colors="blue", linewidths=1.5)
+        pred_line = plt.Line2D([0], [0], color="blue", lw=1.5, label="prediction")
+        gt_line = plt.Line2D([0], [0], color="lime", lw=1.5, label="ground truth")
+        ax.legend(handles=[pred_line, gt_line], loc="lower right", fontsize=6,
+                  framealpha=0.6)
+    plt.tight_layout()
+    plt.show()
+
+
+def show_detection_grid(images, gt_boxes_list, pred_boxes_list, pred_scores_list=None,
+                         n_cols=4, figsize_per_cell=3.0):
+    """Grid of images with ground-truth (green) and predicted (blue) boxes
+    overlaid on the same panel - matches the "Detection results"
+    example-results style in the upstream repo's README
+    (coursat-ai/MultiCheXNet).
+
+    images: list of HxWx3 arrays. gt_boxes_list/pred_boxes_list: list of
+    box-list-per-image, each box as [x1,y1,x2,y2].
+    """
+    n = len(images)
+    n_cols = min(n_cols, n) or 1
+    n_rows = int(np.ceil(n / n_cols))
+    fig, axes = plt.subplots(n_rows, n_cols,
+                              figsize=(figsize_per_cell * n_cols, figsize_per_cell * n_rows))
+    axes = np.atleast_1d(axes).reshape(-1)
+
+    for i in range(len(axes)):
+        ax = axes[i]
+        ax.axis("off")
+        if i >= n:
+            continue
+        ax.imshow(images[i], cmap="gray")
+        for box in gt_boxes_list[i]:
+            x1, y1, x2, y2 = box
+            ax.add_patch(patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=1.5,
+                                            edgecolor="lime", facecolor="none"))
+        for j, box in enumerate(pred_boxes_list[i]):
+            x1, y1, x2, y2 = box
+            ax.add_patch(patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=1.5,
+                                            edgecolor="blue", facecolor="none"))
+            if pred_scores_list is not None:
+                ax.text(x1, max(y1 - 4, 0), f"{pred_scores_list[i][j]:.2f}",
+                        color="yellow", fontsize=7, backgroundcolor="black")
+        pred_line = plt.Line2D([0], [0], color="blue", lw=1.5, label="prediction")
+        gt_line = plt.Line2D([0], [0], color="lime", lw=1.5, label="ground truth")
+        ax.legend(handles=[pred_line, gt_line], loc="lower right", fontsize=6,
+                  framealpha=0.6)
+    plt.tight_layout()
+    plt.show()
+
+
 def show_training_curves(history, keys=None, figsize=(14, 4)):
     """history: dict of {metric_name: [values per epoch]}."""
     keys = keys or list(history.keys())
