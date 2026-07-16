@@ -92,7 +92,22 @@ class BCEDiceLoss(nn.Module):
         with torch.autocast(device_type=y_pred.device.type, enabled=False):
             y_pred_f32 = y_pred.float()
             y_true_f32 = y_true_clamped.float()
-            bce_map = self.bce(y_pred_f32, y_true_f32)
+            # Clamp predictions away from exact 0/1 before BCE. nn.BCELoss
+            # is unbounded as a prediction saturates toward the wrong label:
+            # BCE(pred=1e-7, true=1) = -log(1e-7) ~= 16.1, and with
+            # pos_weight up to 50x that single pixel can contribute ~800 to
+            # the loss (confirmed by direct test). If enough pixels saturate
+            # wrong at once - e.g. after one unlucky gradient step nudges
+            # the segmenter head into a bad region - the averaged loss can
+            # spike by an order of magnitude in a single epoch (observed:
+            # 0.53 -> 7.27) and doesn't reliably recover on its own.
+            # Gradient clipping bounds the *gradient*, not this - it can't
+            # prevent the spike itself, only limit how hard the next step
+            # reacts to it. Clamping the probability first removes the
+            # blowup at the source; 1e-6 is tight enough to not affect
+            # normal (non-saturated) training.
+            y_pred_clamped = y_pred_f32.clamp(min=1e-6, max=1.0 - 1e-6)
+            bce_map = self.bce(y_pred_clamped, y_true_f32)
 
             if self.pos_weight == "auto":
                 n_pos = y_true_f32.sum()
