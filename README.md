@@ -1,6 +1,6 @@
 # MultiCheXNet (PyTorch)
 
-A clean PyTorch reimplementation of **MultiCheXNet** — a single DenseNet-121 encoder shared by three task heads that run in **one forward pass**:
+PyTorch implementation of **MultiCheXNet** — a single DenseNet-121 encoder shared by three task heads that run in **one forward pass**:
 
 | Head | Task | Trained on | Output |
 |---|---|---|---|
@@ -8,9 +8,7 @@ A clean PyTorch reimplementation of **MultiCheXNet** — a single DenseNet-121 e
 | **Detector** | object detection (Tiny-YOLOv2 style) | RSNA Pneumonia Detection Challenge | bounding boxes around pneumonia opacities |
 | **Segmenter** | binary segmentation (Tiramisu-style decoder w/ skip connections) | SIIM-ACR Pneumothorax Segmentation | pixel mask of the pneumothorax region |
 
-This is a from-scratch PyTorch port of the original Keras/TensorFlow [MultiCheXNet](https://github.com/coursat-ai/MultiCheXNet) project, based on the [MultiNet architecture](https://arxiv.org/pdf/1612.07695.pdf) applied to chest X-rays. The model architecture, loss functions, and training scheme (alternating-batch joint training) are faithfully translated, but the code is reorganized into a small, readable package instead of the original scattered scripts.
-
-> **Scope note:** the original repo also contained an experimental "report generation" head (an LSTM captioning model on the Indiana University chest X-ray dataset). That's a separate NLP subsystem and is intentionally left out here to keep the project focused and easy to run end-to-end on a single Colab/Kaggle T4 GPU. Open an issue if you'd like it added back in.
+This is a from-scratch PyTorch based on the [MultiNet architecture](https://arxiv.org/pdf/1612.07695.pdf) applied to chest X-rays. The model architecture, loss functions, and training scheme (alternating-batch joint training) are faithfully translated, but the code is reorganized into a small, readable package instead of the original scattered scripts.
 
 ---
 
@@ -21,7 +19,6 @@ This is a from-scratch PyTorch port of the original Keras/TensorFlow [MultiCheXN
 - [Project structure](#project-structure)
 - [Quick start](#quick-start-colab--kaggle-t4-gpu)
 - [Datasets](#datasets)
-- [Key implementation notes](#key-implementation-notes-vs-the-original-keras-code)
 - [Extending this project](#extending-this-project)
 - [License](#license)
 
@@ -138,17 +135,6 @@ Multiple datasets are used across the training pipeline:
 | [NIH Chest X-rays](https://www.kaggle.com/nih-chest-xrays/data) | Additional classification context (per original MultiCheXNet) | Images + multi-label CSV |
 
 Both the SIIM-ACR and RSNA datasets are downloaded automatically by `00_Setup_and_Data.ipynb` via the Kaggle API. Classification labels are derived automatically: an image is `pneumothorax` if it has a positive SIIM-ACR mask, `pneumonia` if it has a positive RSNA box, and `normal` otherwise.
-
----
-
-## Key implementation notes (vs. the original Keras code)
-
-- **Encoder:** `torchvision.models.densenet121` (ImageNet-pretrained), split into stages so we can tap skip connections for the segmentation decoder, instead of Keras layer-index slicing.
-- **Detection loss:** same Tiny-YOLOv2 formulation (5 anchors, objectness + no-object + coordinate + class terms), rewritten in plain PyTorch tensor ops instead of `tf.function` graph code.
-- **Segmentation loss:** same Dice loss.
-- **"Ignore" samples:** the original code filled un-available targets with `-1` so a single loss function could handle "this sample has no ground truth for this head" inside a mixed batch. We keep exactly that convention (`config.IGNORE_VALUE`), so `YoloLoss` / `DiceLoss` both zero out the loss for any sample whose target is entirely `-1`.
-- **Joint training loop:** the original `MTL_generator` cycled through segmentation → detection → (report) batches. We reproduce the two-source alternation with `MTLJointLoader`, a small round-robin wrapper around two ordinary PyTorch `DataLoader`s — no custom `Sequence` class needed.
-- **Weight transplanting between single-task and joint models:** the original code manually matched Keras layer indices. In PyTorch, every head is just a named submodule, so we simply do `joint_model.load_state_dict(single_task_state_dict, strict=False)` and let PyTorch match by name (see notebook `04`).
 
 ---
 
