@@ -54,7 +54,7 @@ All three heads share the same DenseNet-121 encoder, so a single forward pass pr
 
 **Segmentation head** — predicted pneumothorax mask (blue) vs. ground truth (green):
 
-![Segmentation predictions](docs/images/mask_predictions.png)
+![Segmentation predictions](docs/images/Mask_predictions.png)
 
 **Detection head** — predicted bounding boxes (blue) vs. ground truth (green):
 
